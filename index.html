@@ -5,6 +5,14 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
 </script>
 <script>
 
+        // 全局錯誤捕捉
+        window.onerror = function(msg, url, line) {
+            const ls = document.getElementById('loading-text');
+            const spinner = document.querySelector('.spinner');
+            if(spinner) spinner.style.display = 'none';
+            if(ls) ls.innerHTML = '<div style="color:#ff5555;font-size:16px;text-align:left;background:#222;padding:15px;border-radius:8px;border:1px solid red;max-width:400px;margin:auto;"><b>⚠️ 系統發生錯誤：</b><br>' + msg + '<br><br>💡 請將此畫面截圖回報。</div>';
+        };
+
         let linksData = {}; let sceneSettings = {}; let currentScene = ""; 
         let hotspots = []; let targetFov = 75; 
         let isMapFeatureEnabled = true; let isMapExpanded = true;       
@@ -142,6 +150,13 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                         const loadingScreen = document.getElementById('loading-screen');
                         if(loadingScreen.style.display !== 'none') { loadingScreen.style.opacity = '0'; setTimeout(() => loadingScreen.style.display = 'none', 500); }
                         overlay.style.opacity = '0'; setTimeout(() => { overlay.style.pointerEvents = 'none'; }, 400);
+                    }, undefined, (error) => {
+                        const ls = document.getElementById('loading-screen');
+                        if (ls) {
+                            ls.style.display = 'flex'; ls.style.opacity = '1';
+                            document.querySelector('.spinner').style.display = 'none';
+                            document.getElementById('loading-text').innerHTML = '<div style="color:#ff5555;font-size:16px;text-align:left;background:#222;padding:20px;border-radius:8px;border:1px solid red;max-width:450px;"><b>❌ 圖片載入失敗</b><br><br>系統找不到圖片：<br><span style="color:#0088ff;">' + window.IMAGE_ASSETS[name] + '</span><br><br><span style="color:#aaa;font-size:14px;line-height:1.5;">💡 <b>可能原因：</b><br>1. GitHub 對大小寫非常嚴格，請確認檔名大小寫完全一致 (包含 .jpg)。<br>2. 檔案剛上傳，GitHub 伺服器還在編譯中。<br><br>👉 <b>解決方法：</b><br>請等待約 2 分鐘，然後按下鍵盤的 <b>Ctrl + F5</b> 強制重新整理！</span></div>';
+                        }
                     });
                 }, delay2 - delay1);
             }, delay1);
@@ -211,7 +226,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
         animate();
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
-        // === ✨ 無敵啟動邏輯：直接執行，絕不被時間差中斷 ===
+        // === ✨ 無敵啟動邏輯：直接執行，加入破除快取機制 ===
         function startVirtualTourApp() {
             if (window.PROJECT_MODE === 'SINGLE_HTML') {
                 initTour();
@@ -222,20 +237,24 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                     return;
                 }
                 
-                fetch('./tour.json')
+                // 強制加上時間戳記破壞快取，保證每次抓最新的 JSON
+                fetch('./tour.json?t=' + new Date().getTime())
                 .then(async (r) => {
-                    if (!r.ok) throw new Error("找不到 tour.json 檔案");
+                    if (!r.ok) throw new Error("伺服器回應 404 (找不到 tour.json 檔案)");
                     const textData = await r.text();
                     try { return JSON.parse(textData); } 
-                    catch(err) { throw new Error("tour.json 格式錯誤"); }
+                    catch(err) { throw new Error("tour.json 格式損壞，可能剛上傳還沒寫入完成"); }
                 })
                 .then(data => {
                     window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {}, scenes: data.scenes || [] };
                     window.IMAGE_ASSETS = {};
                     
-                    // 防呆：確保場景清單絕對不會為空
                     window.SCENE_NAMES = (window.PROJECT_DATA.scenes && window.PROJECT_DATA.scenes.length > 0) ? window.PROJECT_DATA.scenes : Object.keys(window.PROJECT_DATA.hotspots);
                     
+                    if(!window.SCENE_NAMES || window.SCENE_NAMES.length === 0) {
+                        throw new Error("設定檔內沒有任何場景資料，請重新在編輯器中打包！");
+                    }
+
                     window.SCENE_NAMES.forEach(n => window.IMAGE_ASSETS[n] = './images/' + n);
                     Object.keys(window.PROJECT_DATA.settings).forEach(k => {
                         if (k !== '__GLOBAL__' && window.PROJECT_DATA.settings[k].mapName) {
@@ -246,18 +265,13 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                     initTour();
                 })
                 .catch(e => {
-                    document.getElementById('loading-text').innerHTML = "❌ 讀取設定檔失敗<br><br><span style='color:#ff5555;font-size:14px;'>錯誤原因：" + e.message + "</span><br><br><span style='font-size:15px;'>💡 請確保上傳至 GitHub 的檔案有 <b>tour.json</b>，且大小寫完全一致。<br>如果剛上傳，請按 <b>Ctrl + F5</b> 強制重新整理。</span>";
+                    document.getElementById('loading-text').innerHTML = "<div style='color:#ff5555;font-size:16px;text-align:left;background:#222;padding:20px;border-radius:8px;border:1px solid red;max-width:450px;margin:auto;'><b>❌ 讀取設定檔失敗</b><br><br><span style='font-size:14px;'>錯誤原因：" + e.message + "</span><br><br><span style='font-size:14px;color:#aaa;line-height:1.6;'>💡 <b>這是因為 GitHub 的延遲或快取：</b><br>如果您剛上傳檔案到 GitHub，伺服器需要大約 <b>1 到 3 分鐘</b> 的時間進行全站編譯。<br><br>👉 <b>解決方法：</b><br>請等待兩分鐘後，按下鍵盤的 <b>Ctrl + F5</b> 強制重新整理網頁！</span></div>";
                     document.querySelector('.spinner').style.display = 'none';
                 });
             }
         }
         
-        // 保證 100% 執行
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', startVirtualTourApp);
-        } else {
-            startVirtualTourApp();
-        }
+        startVirtualTourApp();
     
 </script>
         <!DOCTYPE html>
@@ -299,7 +313,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
         <body>
             <div id="loading-screen">
                 <div class="spinner"></div>
-                <div id="loading-text" style="text-align:center; line-height: 1.6; font-size: 18px;">正在載入空間資料...</div>
+                <div id="loading-text" style="text-align:center; line-height: 1.6; font-size: 18px;">正在為您準備空間資料...<br><span style="font-size:14px;color:#aaa;">(若持續過久，請按 Ctrl+F5 重新整理)</span></div>
             </div>
             <div id="left-hover-zone"></div><div id="transition-overlay"></div><div id="tooltip"></div><div id="jump-menu"></div>
             
