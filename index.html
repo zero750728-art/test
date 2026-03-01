@@ -5,12 +5,11 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
 </script>
 <script>
 
-        // 全局錯誤捕捉
         window.onerror = function(msg, url, line) {
             const ls = document.getElementById('loading-text');
             const spinner = document.querySelector('.spinner');
             if(spinner) spinner.style.display = 'none';
-            if(ls) ls.innerHTML = '<div style="color:#ff5555;font-size:16px;text-align:left;background:#222;padding:15px;border-radius:8px;border:1px solid red;max-width:400px;margin:auto;"><b>⚠️ 系統發生錯誤：</b><br>' + msg + '<br><br>💡 請將此畫面截圖回報。</div>';
+            if(ls) ls.innerHTML = '<div style="color:#ff5555;font-size:16px;text-align:left;background:#222;padding:15px;border-radius:8px;border:1px solid red;max-width:400px;margin:auto;"><b>⚠️ 系統發生錯誤：</b><br>' + msg + '</div>';
         };
 
         let linksData = {}; let sceneSettings = {}; let currentScene = ""; 
@@ -61,17 +60,13 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
 
         function updateMapUI() {
             const assignedMap = sceneSettings[currentScene] && sceneSettings[currentScene].mapName ? sceneSettings[currentScene].mapName : "";
-            
             if (!isMapFeatureEnabled) { minimapContainer.style.display = 'none'; btnToggleMap.style.display = 'none'; return; }
-
             if (isMapExpanded) {
                 minimapContainer.style.display = 'block'; btnToggleMap.style.display = 'none';
                 if (assignedMap && window.IMAGE_ASSETS[assignedMap]) {
                     minimapContainer.style.backgroundImage = `url('${window.IMAGE_ASSETS[assignedMap]}')`;
                     radarLocation.style.display = 'block';
-                } else {
-                    minimapContainer.style.backgroundImage = 'none'; radarLocation.style.display = 'none';
-                }
+                } else { minimapContainer.style.backgroundImage = 'none'; radarLocation.style.display = 'none'; }
             } else {
                 minimapContainer.style.display = 'none';
                 if (assignedMap && window.IMAGE_ASSETS[assignedMap]) { btnToggleMap.style.display = 'block'; } else { btnToggleMap.style.display = 'none'; }
@@ -112,7 +107,6 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
         window.changeScene = function(name, keepView = false) {
             const overlay = document.getElementById('transition-overlay');
             const transType = (sceneSettings['__GLOBAL__'] && sceneSettings['__GLOBAL__'].transition) ? sceneSettings['__GLOBAL__'].transition : 'black';
-            
             overlay.style.pointerEvents = 'all'; 
             if (transType === 'white') { overlay.style.backgroundColor = '#fff'; overlay.style.backdropFilter = 'none'; } 
             else if (transType === 'blur') { overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.2)'; overlay.style.backdropFilter = 'blur(20px)'; } 
@@ -128,13 +122,10 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                     
                     new THREE.TextureLoader().load(window.IMAGE_ASSETS[name], (tex) => {
                         sphere.material.map = tex; sphere.material.needsUpdate = true;
-                        
                         updateFileListUI();
-
                         if (sceneSettings[name] && sceneSettings[name].mapX !== undefined) {
                             radarLocation.style.left = sceneSettings[name].mapX + '%'; radarLocation.style.top = sceneSettings[name].mapY + '%';
                         } else { radarLocation.style.left = '50%'; radarLocation.style.top = '50%'; }
-
                         updateMapUI();
 
                         if (!keepView) { 
@@ -155,7 +146,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                         if (ls) {
                             ls.style.display = 'flex'; ls.style.opacity = '1';
                             document.querySelector('.spinner').style.display = 'none';
-                            document.getElementById('loading-text').innerHTML = '<div style="color:#ff5555;font-size:16px;text-align:left;background:#222;padding:20px;border-radius:8px;border:1px solid red;max-width:450px;"><b>❌ 圖片載入失敗</b><br><br>系統找不到圖片：<br><span style="color:#0088ff;">' + window.IMAGE_ASSETS[name] + '</span><br><br><span style="color:#aaa;font-size:14px;line-height:1.5;">💡 <b>可能原因：</b><br>1. GitHub 對大小寫非常嚴格，請確認檔名大小寫完全一致 (包含 .jpg)。<br>2. 檔案剛上傳，GitHub 伺服器還在編譯中。<br><br>👉 <b>解決方法：</b><br>請等待約 2 分鐘，然後按下鍵盤的 <b>Ctrl + F5</b> 強制重新整理！</span></div>';
+                            document.getElementById('loading-text').innerHTML = '<div style="color:#ff5555;font-size:16px;text-align:left;background:#222;padding:20px;border-radius:8px;border:1px solid red;max-width:450px;"><b>❌ 圖片載入失敗</b><br><br>系統找不到圖片：<br><span style="color:#0088ff;">' + window.IMAGE_ASSETS[name] + '</span><br><br><span style="color:#aaa;font-size:14px;line-height:1.5;">💡 請等待約 2 分鐘後，按下鍵盤的 <b>Ctrl + F5</b> 強制重新整理！</span></div>';
                         }
                     });
                 }, delay2 - delay1);
@@ -192,7 +183,6 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
             } else { tooltip.style.display = 'none'; document.body.classList.remove('hovering'); hotspots.forEach(h => h.material.color.set(0x00ff00)); }
         });
 
-        // 預覽模式一律使用單擊跳轉
         let isDragging = false; controls.addEventListener('change', () => { isDragging = true; }); window.addEventListener('pointerdown', () => { isDragging = false; });
         window.addEventListener('pointerup', (event) => { 
             if (isDragging) return; 
@@ -226,34 +216,28 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
         animate();
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
-        // === ✨ 無敵啟動邏輯：直接執行，加入破除快取機制 ===
         function startVirtualTourApp() {
             if (window.PROJECT_MODE === 'SINGLE_HTML') {
                 initTour();
             } else if (window.PROJECT_MODE === 'ZIP_FOLDER') {
                 if (window.location.protocol === 'file:') {
-                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。<br><br>(若要在本機離線觀看，請使用編輯器的 5B 單檔 HTML 功能)";
+                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。";
                     document.querySelector('.spinner').style.display = 'none';
                     return;
                 }
                 
-                // 強制加上時間戳記破壞快取，保證每次抓最新的 JSON
                 fetch('./tour.json?t=' + new Date().getTime())
                 .then(async (r) => {
-                    if (!r.ok) throw new Error("伺服器回應 404 (找不到 tour.json 檔案)");
+                    if (!r.ok) throw new Error("伺服器回應 404 (找不到 tour.json)");
                     const textData = await r.text();
                     try { return JSON.parse(textData); } 
-                    catch(err) { throw new Error("tour.json 格式損壞，可能剛上傳還沒寫入完成"); }
+                    catch(err) { throw new Error("tour.json 格式損壞"); }
                 })
                 .then(data => {
                     window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {}, scenes: data.scenes || [] };
                     window.IMAGE_ASSETS = {};
-                    
                     window.SCENE_NAMES = (window.PROJECT_DATA.scenes && window.PROJECT_DATA.scenes.length > 0) ? window.PROJECT_DATA.scenes : Object.keys(window.PROJECT_DATA.hotspots);
-                    
-                    if(!window.SCENE_NAMES || window.SCENE_NAMES.length === 0) {
-                        throw new Error("設定檔內沒有任何場景資料，請重新在編輯器中打包！");
-                    }
+                    if(!window.SCENE_NAMES || window.SCENE_NAMES.length === 0) { throw new Error("設定檔內沒有場景資料"); }
 
                     window.SCENE_NAMES.forEach(n => window.IMAGE_ASSETS[n] = './images/' + n);
                     Object.keys(window.PROJECT_DATA.settings).forEach(k => {
@@ -265,13 +249,13 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                     initTour();
                 })
                 .catch(e => {
-                    document.getElementById('loading-text').innerHTML = "<div style='color:#ff5555;font-size:16px;text-align:left;background:#222;padding:20px;border-radius:8px;border:1px solid red;max-width:450px;margin:auto;'><b>❌ 讀取設定檔失敗</b><br><br><span style='font-size:14px;'>錯誤原因：" + e.message + "</span><br><br><span style='font-size:14px;color:#aaa;line-height:1.6;'>💡 <b>這是因為 GitHub 的延遲或快取：</b><br>如果您剛上傳檔案到 GitHub，伺服器需要大約 <b>1 到 3 分鐘</b> 的時間進行全站編譯。<br><br>👉 <b>解決方法：</b><br>請等待兩分鐘後，按下鍵盤的 <b>Ctrl + F5</b> 強制重新整理網頁！</span></div>";
+                    document.getElementById('loading-text').innerHTML = "<div style='color:#ff5555;font-size:16px;text-align:left;background:#222;padding:20px;border-radius:8px;border:1px solid red;max-width:450px;margin:auto;'><b>❌ 讀取設定檔失敗</b><br><br><span style='font-size:14px;'>錯誤原因：" + e.message + "</span><br><br><span style='font-size:14px;color:#aaa;line-height:1.6;'>💡 <b>這是因為 GitHub 的延遲或快取：</b><br>如果您剛上傳檔案，伺服器需要約 <b>2 分鐘</b> 編譯。<br><br>👉 <b>請等待後，按下鍵盤 Ctrl + F5 強制重新整理！</b></span></div>";
                     document.querySelector('.spinner').style.display = 'none';
                 });
             }
         }
         
-        startVirtualTourApp();
+        if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', startVirtualTourApp); } else { startVirtualTourApp(); }
     
 </script>
         <!DOCTYPE html>
@@ -290,8 +274,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                 #ui-panel:hover, #left-hover-zone:hover + #ui-panel { transform: translateX(0); }
                 #file-list { max-height: 60vh; overflow-y: auto; border-top: 1px solid #555; margin-top: 10px; padding-top: 5px; }
                 .file-item { padding: 10px 8px; cursor: pointer; border-bottom: 1px solid #444; font-size: 14px; color: #ddd; transition: 0.2s;}
-                .file-item:hover { background: #333; color: white; } 
-                .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
+                .file-item:hover { background: #333; color: white; } .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
                 #tooltip { position: absolute; display: none; pointer-events: none; background: rgba(0, 0, 0, 0.8); color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 14px; border: 1px solid rgba(255, 255, 255, 0.3); white-space: nowrap; z-index: 100; }
                 #jump-menu { position: absolute; display: none; z-index: 30; background: rgba(0, 0, 0, 0.9); padding: 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); border: 1px solid #555; min-width: 150px; }
                 #jump-menu button { background: #333; color: white; text-align: left; padding: 10px; margin-bottom: 5px; font-size: 15px; border-radius: 4px; border: 1px solid #444; width: 100%; cursor: pointer; transition: 0.2s; border:none; }
@@ -316,20 +299,17 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                 <div id="loading-text" style="text-align:center; line-height: 1.6; font-size: 18px;">正在為您準備空間資料...<br><span style="font-size:14px;color:#aaa;">(若持續過久，請按 Ctrl+F5 重新整理)</span></div>
             </div>
             <div id="left-hover-zone"></div><div id="transition-overlay"></div><div id="tooltip"></div><div id="jump-menu"></div>
-            
             <div id="ui-panel">
                 <h3 style="margin: 0 0 5px 0;">🏠 空間導覽</h3>
                 <div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">(滑鼠靠近左側邊緣展開選單)</div>
                 <div id="current-scene-name" style="color: #0088ff; font-size: 14px; font-weight: bold;">載入中...</div>
                 <div id="file-list"></div>
             </div>
-            
             <button id="btn-show-minimap">🗺️ 展開小地圖</button>
             <div id="minimap-container">
                 <button id="btn-close-minimap" title="縮小小地圖">✖</button>
                 <div id="radar-location"><div id="radar-dot"></div><div id="radar-cone"></div></div>
             </div>
-            
             <!-- Code injected by live-server -->
 <script>
 	// <![CDATA[  <-- For SVG support
