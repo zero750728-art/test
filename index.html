@@ -1,0 +1,363 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+window.PROJECT_MODE = 'ZIP_FOLDER';
+</script>
+<script>
+
+        let linksData = {}; let sceneSettings = {}; let currentScene = ""; 
+        let hotspots = []; let targetFov = 75; 
+        let isMapFeatureEnabled = true; let isMapExpanded = true;       
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+        
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableZoom = false; controls.enableDamping = true; controls.dampingFactor = 0.05; controls.rotateSpeed = -0.2;   
+        
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(500, 60, 40), new THREE.MeshBasicMaterial({ color: 0x333333, wireframe: false }));
+        sphere.geometry.scale(-1, 1, 1); scene.add(sphere);
+        
+        const fileListDiv = document.getElementById('file-list');
+        const minimapContainer = document.getElementById('minimap-container');
+        const radarLocation = document.getElementById('radar-location');
+        const radarCone = document.getElementById('radar-cone');
+        const btnToggleMap = document.getElementById('btn-show-minimap');
+        const btnCloseMap = document.getElementById('btn-close-minimap');
+
+        function getBaseName(filename) { return filename.includes('.') ? filename.split('.').slice(0, -1).join('.') : filename; }
+
+        function initTour() {
+            linksData = window.PROJECT_DATA.hotspots || window.PROJECT_DATA;
+            sceneSettings = window.PROJECT_DATA.settings || {};
+
+            if (sceneSettings['__GLOBAL__'] && sceneSettings['__GLOBAL__'].enableMinimap !== undefined) {
+                isMapFeatureEnabled = sceneSettings['__GLOBAL__'].enableMinimap; 
+            }
+            
+            window.SCENE_NAMES.forEach(name => {
+                const div = document.createElement('div'); div.className = 'file-item'; div.setAttribute('data-name', name);
+                div.onclick = () => changeScene(name); fileListDiv.appendChild(div);
+            });
+            
+            let startScene = window.SCENE_NAMES[0];
+            if (sceneSettings['__GLOBAL__'] && sceneSettings['__GLOBAL__'].initialScene && window.SCENE_NAMES.includes(sceneSettings['__GLOBAL__'].initialScene)) { 
+                startScene = sceneSettings['__GLOBAL__'].initialScene; 
+            }
+            if (startScene) changeScene(startScene); 
+            else document.getElementById('loading-text').innerText = "沒有場景資料";
+        }
+
+        function updateMapUI() {
+            const assignedMap = sceneSettings[currentScene] && sceneSettings[currentScene].mapName ? sceneSettings[currentScene].mapName : "";
+            
+            if (!isMapFeatureEnabled) { minimapContainer.style.display = 'none'; btnToggleMap.style.display = 'none'; return; }
+
+            if (isMapExpanded) {
+                minimapContainer.style.display = 'block'; btnToggleMap.style.display = 'none';
+                if (assignedMap && window.IMAGE_ASSETS[assignedMap]) {
+                    minimapContainer.style.backgroundImage = 'url(' + window.IMAGE_ASSETS[assignedMap] + ')';
+                    radarLocation.style.display = 'block';
+                } else {
+                    minimapContainer.style.backgroundImage = 'none'; radarLocation.style.display = 'none';
+                }
+            } else {
+                minimapContainer.style.display = 'none';
+                if (assignedMap && window.IMAGE_ASSETS[assignedMap]) { btnToggleMap.style.display = 'block'; } else { btnToggleMap.style.display = 'none'; }
+            }
+        }
+
+        btnCloseMap.addEventListener('click', (e) => { e.stopPropagation(); isMapExpanded = false; updateMapUI(); });
+        btnToggleMap.addEventListener('click', () => { isMapExpanded = true; updateMapUI(); });
+
+        function updateFileListUI() {
+            const initialScene = sceneSettings['__GLOBAL__'] ? sceneSettings['__GLOBAL__'].initialScene : null;
+            document.querySelectorAll('.file-item').forEach(div => {
+                const sceneName = div.getAttribute('data-name');
+                let displayName = getBaseName(sceneName);
+                if (sceneName === initialScene) displayName = '⭐ ' + displayName;
+                div.innerText = displayName; div.classList.toggle('active', sceneName === currentScene);
+            });
+        }
+
+        function renderMapDots() {
+            document.querySelectorAll('.map-dot').forEach(e => e.remove());
+            const currentMap = sceneSettings[currentScene] ? sceneSettings[currentScene].mapName : null;
+            if (!currentMap) return;
+
+            Object.keys(sceneSettings).forEach(sceneName => {
+                if (sceneName === '__GLOBAL__') return; 
+                const settings = sceneSettings[sceneName];
+                if (settings.mapName === currentMap && settings.mapX !== undefined && sceneName !== currentScene) {
+                    const dot = document.createElement('div'); dot.className = 'map-dot';
+                    dot.style.left = settings.mapX + '%'; dot.style.top = settings.mapY + '%';
+                    dot.title = "前往: " + getBaseName(sceneName); 
+                    dot.onclick = (e) => { e.stopPropagation(); changeScene(sceneName); };
+                    minimapContainer.appendChild(dot);
+                }
+            });
+        }
+
+        window.changeScene = function(name, keepView = false) {
+            const overlay = document.getElementById('transition-overlay');
+            const transType = (sceneSettings['__GLOBAL__'] && sceneSettings['__GLOBAL__'].transition) ? sceneSettings['__GLOBAL__'].transition : 'black';
+            
+            overlay.style.pointerEvents = 'all'; 
+            if (transType === 'white') { overlay.style.backgroundColor = '#fff'; overlay.style.backdropFilter = 'none'; } 
+            else if (transType === 'blur') { overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.2)'; overlay.style.backdropFilter = 'blur(20px)'; } 
+            else { overlay.style.backgroundColor = '#000'; overlay.style.backdropFilter = 'none'; }
+
+            let delay1 = 0; let delay2 = 400; 
+            if (transType === 'zoom' && !keepView) { targetFov = 30; delay1 = 150; delay2 = 500; }
+
+            setTimeout(() => {
+                overlay.style.opacity = '1'; 
+                setTimeout(() => {
+                    currentScene = name; document.getElementById('current-scene-name').innerText = getBaseName(name);
+                    
+                    new THREE.TextureLoader().load(window.IMAGE_ASSETS[name], (tex) => {
+                        sphere.material.map = tex; sphere.material.needsUpdate = true;
+                        
+                        updateFileListUI();
+
+                        if (sceneSettings[name] && sceneSettings[name].mapX !== undefined) {
+                            radarLocation.style.left = sceneSettings[name].mapX + '%'; radarLocation.style.top = sceneSettings[name].mapY + '%';
+                        } else { radarLocation.style.left = '50%'; radarLocation.style.top = '50%'; }
+
+                        updateMapUI();
+
+                        if (!keepView) { 
+                            if (sceneSettings[name] && sceneSettings[name].initialView) {
+                                const view = sceneSettings[name].initialView; 
+                                const spherical = new THREE.Spherical(0.1, view.polar, view.azimuthal);
+                                camera.position.setFromSpherical(spherical); 
+                            } else { camera.position.set(0.1, 0, 0); }
+                            targetFov = 75; camera.fov = 75; camera.updateProjectionMatrix();
+                        }
+                        
+                        controls.update(); renderHotspots(); renderMapDots(); document.getElementById('jump-menu').style.display = 'none';
+                        const loadingScreen = document.getElementById('loading-screen');
+                        if(loadingScreen.style.display !== 'none') { loadingScreen.style.opacity = '0'; setTimeout(() => loadingScreen.style.display = 'none', 500); }
+                        overlay.style.opacity = '0'; setTimeout(() => { overlay.style.pointerEvents = 'none'; }, 400);
+                    });
+                }, delay2 - delay1);
+            }, delay1);
+        }
+
+        function renderHotspots() {
+            hotspots.forEach(mesh => scene.remove(mesh)); hotspots = []; const dataList = linksData[currentScene] || [];
+            dataList.forEach(data => {
+                const geo = new THREE.ConeGeometry(5, 15, 32); geo.rotateX(Math.PI / 2); 
+                const mat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.8 });
+                const mesh = new THREE.Mesh(geo, mat); mesh.position.set(data.x, data.y, data.z); mesh.lookAt(0, 0, 0); 
+                let targetsList = data.targets ? data.targets : []; mesh.userData = { targets: targetsList, label: data.label, keepView: !!data.keepView };
+                scene.add(mesh); hotspots.push(mesh);
+            });
+        }
+
+        const tooltip = document.getElementById('tooltip'); const jumpMenu = document.getElementById('jump-menu'); const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2();
+        window.addEventListener('click', (event) => { if (!event.target.closest('#jump-menu') && jumpMenu.style.display === 'block') jumpMenu.style.display = 'none'; });
+        
+        window.addEventListener('mousemove', (event) => {
+            if (jumpMenu.style.display !== 'none') return; 
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1; mouse.y = -(event.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(hotspots);
+            if (intersects.length > 0) {
+                document.body.classList.add('hovering'); const targetMesh = intersects[0].object; targetMesh.material.color.set(0xccffcc);
+                const targets = targetMesh.userData.targets; const customLabel = targetMesh.userData.label;
+                if (customLabel) { tooltip.innerText = "🚪 " + customLabel; } 
+                else {
+                    if (targets.length > 1) { tooltip.innerText = "🚪 前往: 多個位置 (" + targets.length + ")"; } 
+                    else if (targets.length === 1) { tooltip.innerText = "🚪 " + (targets[0].label || getBaseName(targets[0].target)); }
+                }
+                tooltip.style.display = 'block'; tooltip.style.left = (event.clientX + 15) + 'px'; tooltip.style.top = (event.clientY + 15) + 'px';
+            } else { tooltip.style.display = 'none'; document.body.classList.remove('hovering'); hotspots.forEach(h => h.material.color.set(0x00ff00)); }
+        });
+
+        let isDragging = false; controls.addEventListener('change', () => { isDragging = true; }); window.addEventListener('pointerdown', () => { isDragging = false; });
+        window.addEventListener('pointerup', (event) => { 
+            if (isDragging) return; 
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1; mouse.y = -(event.clientY / window.innerHeight) * 2 + 1; raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(hotspots);
+            if (intersects.length > 0) {
+                const targetMesh = intersects[0].object; const targets = targetMesh.userData.targets; const keepView = targetMesh.userData.keepView; 
+                if (targets.length === 1) { changeScene(targets[0].target, keepView); } 
+                else if (targets.length > 1) {
+                    jumpMenu.innerHTML = '<div style="color:#aaa; font-size:12px; margin-bottom:8px;">請選擇前往：</div>';
+                    targets.forEach(t => {
+                        const btn = document.createElement('button'); btn.innerText = "🚪 " + (t.label || getBaseName(t.target));
+                        btn.onclick = (e) => { e.stopPropagation(); changeScene(t.target, keepView); }; jumpMenu.appendChild(btn);
+                    });
+                    jumpMenu.style.left = event.clientX + 'px'; jumpMenu.style.top = event.clientY + 'px'; jumpMenu.style.display = 'block'; tooltip.style.display = 'none'; 
+                }
+            }
+        });
+
+        window.addEventListener('wheel', (event) => { targetFov += event.deltaY * 0.05; targetFov = Math.max(30, Math.min(100, targetFov)); });
+
+        function animate() {
+            requestAnimationFrame(animate); camera.fov += (targetFov - camera.fov) * 0.1; camera.updateProjectionMatrix(); controls.update(); 
+            if (currentScene && PROJECT_DATA.settings[currentScene]) {
+                let offsetRadian = PROJECT_DATA.settings[currentScene].northOffset || 0; 
+                const angleRadian = controls.getAzimuthalAngle() - offsetRadian; const angleDegree = -(angleRadian * 180 / Math.PI);
+                radarCone.style.transform = 'translate(-50%, 0) rotate(' + (angleDegree + 180) + 'deg)';
+            }
+            renderer.render(scene, camera);
+        }
+        animate();
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+        // === 智慧啟動邏輯 ===
+        window.addEventListener('DOMContentLoaded', () => {
+            if (window.PROJECT_MODE === 'SINGLE_HTML') {
+                initTour();
+            } else if (window.PROJECT_MODE === 'ZIP_FOLDER') {
+                if (window.location.protocol === 'file:') {
+                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。<br><br>(若要在本機離線觀看，請使用編輯器的 5B 單檔 HTML 功能)";
+                    document.querySelector('.spinner').style.display = 'none';
+                    return;
+                }
+                fetch('./tour.json').then(r => r.json()).then(data => {
+                    window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {} };
+                    window.IMAGE_ASSETS = {};
+                    window.SCENE_NAMES = Object.keys(window.PROJECT_DATA.hotspots);
+                    window.SCENE_NAMES.forEach(n => window.IMAGE_ASSETS[n] = './images/' + n);
+                    Object.keys(window.PROJECT_DATA.settings).forEach(k => {
+                        if (k !== '__GLOBAL__' && window.PROJECT_DATA.settings[k].mapName) {
+                            const mName = window.PROJECT_DATA.settings[k].mapName;
+                            window.IMAGE_ASSETS[mName] = './images/' + mName;
+                        }
+                    });
+                    initTour();
+                }).catch(e => {
+                    document.getElementById('loading-text').innerHTML = "❌ 找不到 tour.json 設定檔。";
+                    document.querySelector('.spinner').style.display = 'none';
+                });
+            }
+        });
+    
+</script>
+<script>
+
+                async function fetchZIPData() {
+                    try {
+                        if (window.location.protocol === 'file:') {
+                            document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器限制 ⚠️<br>ZIP 解壓縮包必須放置於「網頁伺服器」上執行。<br>若要在本機觀看，請使用編輯器的「5B 單檔 HTML」匯出功能。";
+                            document.querySelector('.spinner').style.display = 'none';
+                            return;
+                        }
+                        const res = await fetch('./tour.json');
+                        const data = await res.json();
+                        window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {} };
+                        
+                        window.IMAGE_ASSETS = {};
+                        window.SCENE_NAMES = Object.keys(window.PROJECT_DATA.hotspots);
+                        window.SCENE_NAMES.forEach(n => window.IMAGE_ASSETS[n] = './images/' + n);
+                        Object.keys(window.PROJECT_DATA.settings).forEach(k => {
+                            if (k !== '__GLOBAL__' && window.PROJECT_DATA.settings[k].mapName) {
+                                const mName = window.PROJECT_DATA.settings[k].mapName;
+                                window.IMAGE_ASSETS[mName] = './images/' + mName;
+                            }
+                        });
+                        initTour();
+                    } catch(e) {
+                        document.getElementById('loading-text').innerHTML = "❌ 找不到設定檔。請確認檔案放置於伺服器中。";
+                        document.querySelector('.spinner').style.display = 'none';
+                    }
+                }
+                fetchZIPData();
+                
+</script>
+        <!DOCTYPE html>
+        <html lang="zh-TW">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+            <title>3D 虛擬空間導覽</title>
+            <style>
+                body { margin: 0; overflow: hidden; background-color: #111; font-family: "微軟正黑體", sans-serif; }
+                #loading-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #111; color: white; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease-out; }
+                .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid #fff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px; }
+                @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                #left-hover-zone { position: absolute; top: 0; left: 0; width: 15px; height: 100%; z-index: 9; }
+                #ui-panel { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(0, 0, 0, 0.85); padding: 15px; border-radius: 8px; color: white; width: 220px; box-shadow: 2px 2px 10px rgba(0,0,0,0.5); transform: translateX(calc(-100% - 20px)); transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
+                #ui-panel:hover, #left-hover-zone:hover + #ui-panel { transform: translateX(0); }
+                #file-list { max-height: 60vh; overflow-y: auto; border-top: 1px solid #555; margin-top: 10px; padding-top: 5px; }
+                .file-item { padding: 10px 8px; cursor: pointer; border-bottom: 1px solid #444; font-size: 14px; color: #ddd; transition: 0.2s;}
+                .file-item:hover { background: #333; color: white; } 
+                .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
+                #tooltip { position: absolute; display: none; pointer-events: none; background: rgba(0, 0, 0, 0.8); color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 14px; border: 1px solid rgba(255, 255, 255, 0.3); white-space: nowrap; z-index: 100; }
+                #jump-menu { position: absolute; display: none; z-index: 30; background: rgba(0, 0, 0, 0.9); padding: 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); border: 1px solid #555; min-width: 150px; }
+                #jump-menu button { background: #333; color: white; text-align: left; padding: 10px; margin-bottom: 5px; font-size: 15px; border-radius: 4px; border: 1px solid #444; width: 100%; cursor: pointer; transition: 0.2s; border:none; }
+                #jump-menu button:hover { background: #0088ff; border-color: #00aaff; }
+                #minimap-container { position: absolute; bottom: 20px; right: 20px; z-index: 10; width: 250px; height: 200px; background-color: rgba(255, 255, 255, 0.9); background-size: contain; background-position: center; background-repeat: no-repeat; border: 2px solid #ccc; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); overflow: hidden; display: none; }
+                #btn-close-minimap { position: absolute; top: 5px; right: 5px; z-index: 20; background: rgba(0, 0, 0, 0.5); color: white; border: none; border-radius: 50%; width: 24px; height: 24px; cursor: pointer; font-size: 12px; display: flex; justify-content: center; align-items: center; transition: 0.2s; padding: 0; }
+                #btn-close-minimap:hover { background: red; }
+                #btn-show-minimap { position: absolute; bottom: 20px; right: 20px; z-index: 10; background: rgba(255, 255, 255, 0.9); color: #333; padding: 10px 15px; border-radius: 8px; border: 2px solid #ccc; cursor: pointer; font-weight: bold; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: none; transition: 0.2s; width: auto; }
+                #btn-show-minimap:hover { background: #ddd; }
+                #radar-location { position: absolute; top: 50%; left: 50%; width: 0; height: 0; z-index: 2; transition: top 0.4s, left 0.4s; }
+                #radar-dot { position: absolute; top: -5px; left: -5px; width: 10px; height: 10px; background: red; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.5); border: 2px solid white; }
+                #radar-cone { position: absolute; top: 0; left: 0; width: 0; height: 0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 60px solid rgba(255, 0, 0, 0.3); transform-origin: 50% 0; transform: translate(-50%, 0) rotate(0deg); pointer-events: none; }
+                .map-dot { position: absolute; width: 10px; height: 10px; background: #2196F3; border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,0.8); transform: translate(-50%, -50%); z-index: 1; cursor: pointer; border: 2px solid white; transition: 0.2s; }
+                .map-dot:hover { background: #ff9800; transform: translate(-50%, -50%) scale(1.3); }
+                #transition-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: #000; z-index: 998; opacity: 0; pointer-events: none; transition: opacity 0.4s ease-in-out; -webkit-backdrop-filter: blur(0px); backdrop-filter: blur(0px); }
+                body.hovering { cursor: pointer; }
+            </style>
+        </head>
+        <body>
+            <div id="loading-screen"><div class="spinner"></div><div id="loading-text" style="text-align:center;">載入環境中...</div></div>
+            <div id="left-hover-zone"></div><div id="transition-overlay"></div><div id="tooltip"></div><div id="jump-menu"></div>
+            
+            <div id="ui-panel">
+                <h3 style="margin: 0 0 5px 0;">🏠 空間導覽</h3>
+                <div style="font-size: 12px; color: #aaa; margin-bottom: 10px;">(滑鼠靠近左側邊緣展開選單)</div>
+                <div id="current-scene-name" style="color: #0088ff; font-size: 14px; font-weight: bold;">載入中...</div>
+                <div id="file-list"></div>
+            </div>
+            
+            <button id="btn-show-minimap">🗺️ 展開小地圖</button>
+            <div id="minimap-container">
+                <button id="btn-close-minimap" title="縮小小地圖">✖</button>
+                <div id="radar-location"><div id="radar-dot"></div><div id="radar-cone"></div></div>
+            </div>
+            
+            <!-- Code injected by live-server -->
+<script>
+	// <![CDATA[  <-- For SVG support
+	if ('WebSocket' in window) {
+		(function () {
+			function refreshCSS() {
+				var sheets = [].slice.call(document.getElementsByTagName("link"));
+				var head = document.getElementsByTagName("head")[0];
+				for (var i = 0; i < sheets.length; ++i) {
+					var elem = sheets[i];
+					var parent = elem.parentElement || head;
+					parent.removeChild(elem);
+					var rel = elem.rel;
+					if (elem.href && typeof rel != "string" || rel.length == 0 || rel.toLowerCase() == "stylesheet") {
+						var url = elem.href.replace(/(&|\?)_cacheOverride=\d+/, '');
+						elem.href = url + (url.indexOf('?') >= 0 ? '&' : '?') + '_cacheOverride=' + (new Date().valueOf());
+					}
+					parent.appendChild(elem);
+				}
+			}
+			var protocol = window.location.protocol === 'http:' ? 'ws://' : 'wss://';
+			var address = protocol + window.location.host + window.location.pathname + '/ws';
+			var socket = new WebSocket(address);
+			socket.onmessage = function (msg) {
+				if (msg.data == 'reload') window.location.reload();
+				else if (msg.data == 'refreshcss') refreshCSS();
+			};
+			if (sessionStorage && !sessionStorage.getItem('IsThisFirstTime_Log_From_LiveServer')) {
+				console.log('Live reload enabled.');
+				sessionStorage.setItem('IsThisFirstTime_Log_From_LiveServer', true);
+			}
+		})();
+	}
+	else {
+		console.error('Upgrade your browser. This Browser is NOT supported WebSocket for Live-Reloading.');
+	}
+	// ]]>
