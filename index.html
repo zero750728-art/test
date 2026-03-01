@@ -177,6 +177,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
             } else { tooltip.style.display = 'none'; document.body.classList.remove('hovering'); hotspots.forEach(h => h.material.color.set(0x00ff00)); }
         });
 
+        // 預覽模式一律使用單擊跳轉
         let isDragging = false; controls.addEventListener('change', () => { isDragging = true; }); window.addEventListener('pointerdown', () => { isDragging = false; });
         window.addEventListener('pointerup', (event) => { 
             if (isDragging) return; 
@@ -200,8 +201,8 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
 
         function animate() {
             requestAnimationFrame(animate); camera.fov += (targetFov - camera.fov) * 0.1; camera.updateProjectionMatrix(); controls.update(); 
-            if (currentScene && PROJECT_DATA.settings[currentScene]) {
-                let offsetRadian = PROJECT_DATA.settings[currentScene].northOffset || 0; 
+            if (currentScene && sceneSettings[currentScene]) {
+                let offsetRadian = sceneSettings[currentScene].northOffset || 0; 
                 const angleRadian = controls.getAzimuthalAngle() - offsetRadian; const angleDegree = -(angleRadian * 180 / Math.PI);
                 radarCone.style.transform = 'translate(-50%, 0) rotate(' + (angleDegree + 180) + 'deg)';
             }
@@ -210,17 +211,29 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
         animate();
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
-        // === 智慧啟動邏輯 ===
+        // === ✨ 強化版智慧啟動邏輯，具備精準錯誤顯示 ===
         window.addEventListener('DOMContentLoaded', () => {
             if (window.PROJECT_MODE === 'SINGLE_HTML') {
                 initTour();
             } else if (window.PROJECT_MODE === 'ZIP_FOLDER') {
+                // ZIP 模式下的載入防呆檢測
                 if (window.location.protocol === 'file:') {
-                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。<br><br>(若要在本機離線觀看，請使用編輯器的 5B 單檔 HTML 功能)";
+                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。<br><br>(若要離線觀看，請使用編輯器的 5B 單檔 HTML 功能)";
                     document.querySelector('.spinner').style.display = 'none';
                     return;
                 }
-                fetch('./tour.json').then(r => r.json()).then(data => {
+                
+                fetch('./tour.json')
+                .then(async (r) => {
+                    if (!r.ok) throw new Error("伺服器狀態碼: " + r.status + " (找不到 tour.json 檔案)");
+                    const textData = await r.text();
+                    try {
+                        return JSON.parse(textData);
+                    } catch(err) {
+                        throw new Error("tour.json 內容格式錯誤，可能尚未上傳完成");
+                    }
+                })
+                .then(data => {
                     window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {} };
                     window.IMAGE_ASSETS = {};
                     window.SCENE_NAMES = Object.keys(window.PROJECT_DATA.hotspots);
@@ -232,44 +245,14 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                         }
                     });
                     initTour();
-                }).catch(e => {
-                    document.getElementById('loading-text').innerHTML = "❌ 找不到 tour.json 設定檔。";
+                })
+                .catch(e => {
+                    document.getElementById('loading-text').innerHTML = "❌ 讀取設定檔失敗<br><br><span style='color:#ff5555;'>錯誤原因：" + e.message + "</span><br><br>💡 請按下鍵盤 <b>Ctrl + F5</b> 強制重整網頁試試看！";
                     document.querySelector('.spinner').style.display = 'none';
                 });
             }
         });
     
-</script>
-<script>
-
-                async function fetchZIPData() {
-                    try {
-                        if (window.location.protocol === 'file:') {
-                            document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器限制 ⚠️<br>ZIP 解壓縮包必須放置於「網頁伺服器」上執行。<br>若要在本機觀看，請使用編輯器的「5B 單檔 HTML」匯出功能。";
-                            document.querySelector('.spinner').style.display = 'none';
-                            return;
-                        }
-                        const res = await fetch('./tour.json');
-                        const data = await res.json();
-                        window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {} };
-                        
-                        window.IMAGE_ASSETS = {};
-                        window.SCENE_NAMES = Object.keys(window.PROJECT_DATA.hotspots);
-                        window.SCENE_NAMES.forEach(n => window.IMAGE_ASSETS[n] = './images/' + n);
-                        Object.keys(window.PROJECT_DATA.settings).forEach(k => {
-                            if (k !== '__GLOBAL__' && window.PROJECT_DATA.settings[k].mapName) {
-                                const mName = window.PROJECT_DATA.settings[k].mapName;
-                                window.IMAGE_ASSETS[mName] = './images/' + mName;
-                            }
-                        });
-                        initTour();
-                    } catch(e) {
-                        document.getElementById('loading-text').innerHTML = "❌ 找不到設定檔。請確認檔案放置於伺服器中。";
-                        document.querySelector('.spinner').style.display = 'none';
-                    }
-                }
-                fetchZIPData();
-                
 </script>
         <!DOCTYPE html>
         <html lang="zh-TW">
@@ -287,8 +270,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                 #ui-panel:hover, #left-hover-zone:hover + #ui-panel { transform: translateX(0); }
                 #file-list { max-height: 60vh; overflow-y: auto; border-top: 1px solid #555; margin-top: 10px; padding-top: 5px; }
                 .file-item { padding: 10px 8px; cursor: pointer; border-bottom: 1px solid #444; font-size: 14px; color: #ddd; transition: 0.2s;}
-                .file-item:hover { background: #333; color: white; } 
-                .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
+                .file-item:hover { background: #333; color: white; } .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
                 #tooltip { position: absolute; display: none; pointer-events: none; background: rgba(0, 0, 0, 0.8); color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 14px; border: 1px solid rgba(255, 255, 255, 0.3); white-space: nowrap; z-index: 100; }
                 #jump-menu { position: absolute; display: none; z-index: 30; background: rgba(0, 0, 0, 0.9); padding: 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); border: 1px solid #555; min-width: 150px; }
                 #jump-menu button { background: #333; color: white; text-align: left; padding: 10px; margin-bottom: 5px; font-size: 15px; border-radius: 4px; border: 1px solid #444; width: 100%; cursor: pointer; transition: 0.2s; border:none; }
@@ -308,7 +290,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
             </style>
         </head>
         <body>
-            <div id="loading-screen"><div class="spinner"></div><div id="loading-text" style="text-align:center;">載入環境中...</div></div>
+            <div id="loading-screen"><div class="spinner"></div><div id="loading-text" style="text-align:center; line-height: 1.6;">建構空間環境中...</div></div>
             <div id="left-hover-zone"></div><div id="transition-overlay"></div><div id="tooltip"></div><div id="jump-menu"></div>
             
             <div id="ui-panel">
