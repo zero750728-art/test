@@ -48,7 +48,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                 startScene = sceneSettings['__GLOBAL__'].initialScene; 
             }
             if (startScene) changeScene(startScene); 
-            else document.getElementById('loading-text').innerText = "沒有場景資料";
+            else document.getElementById('loading-text').innerHTML = "❌ 專案中沒有場景資料";
         }
 
         function updateMapUI() {
@@ -59,7 +59,7 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
             if (isMapExpanded) {
                 minimapContainer.style.display = 'block'; btnToggleMap.style.display = 'none';
                 if (assignedMap && window.IMAGE_ASSETS[assignedMap]) {
-                    minimapContainer.style.backgroundImage = 'url(' + window.IMAGE_ASSETS[assignedMap] + ')';
+                    minimapContainer.style.backgroundImage = `url('${window.IMAGE_ASSETS[assignedMap]}')`;
                     radarLocation.style.display = 'block';
                 } else {
                     minimapContainer.style.backgroundImage = 'none'; radarLocation.style.display = 'none';
@@ -211,32 +211,31 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
         animate();
         window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
 
-        // === ✨ 強化版智慧啟動邏輯，具備精準錯誤顯示 ===
-        window.addEventListener('DOMContentLoaded', () => {
+        // === ✨ 無敵啟動邏輯：直接執行，絕不被時間差中斷 ===
+        function startVirtualTourApp() {
             if (window.PROJECT_MODE === 'SINGLE_HTML') {
                 initTour();
             } else if (window.PROJECT_MODE === 'ZIP_FOLDER') {
-                // ZIP 模式下的載入防呆檢測
                 if (window.location.protocol === 'file:') {
-                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。<br><br>(若要離線觀看，請使用編輯器的 5B 單檔 HTML 功能)";
+                    document.getElementById('loading-text').innerHTML = "⚠️ 瀏覽器安全性限制 ⚠️<br><br>ZIP 解壓縮出來的資料夾，必須放置於「網頁伺服器」上執行。<br>無法直接在電腦上雙擊 index.html 觀看。<br><br>(若要在本機離線觀看，請使用編輯器的 5B 單檔 HTML 功能)";
                     document.querySelector('.spinner').style.display = 'none';
                     return;
                 }
                 
                 fetch('./tour.json')
                 .then(async (r) => {
-                    if (!r.ok) throw new Error("伺服器狀態碼: " + r.status + " (找不到 tour.json 檔案)");
+                    if (!r.ok) throw new Error("找不到 tour.json 檔案");
                     const textData = await r.text();
-                    try {
-                        return JSON.parse(textData);
-                    } catch(err) {
-                        throw new Error("tour.json 內容格式錯誤，可能尚未上傳完成");
-                    }
+                    try { return JSON.parse(textData); } 
+                    catch(err) { throw new Error("tour.json 格式錯誤"); }
                 })
                 .then(data => {
-                    window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {} };
+                    window.PROJECT_DATA = { hotspots: data.hotspots || data, settings: data.settings || {}, scenes: data.scenes || [] };
                     window.IMAGE_ASSETS = {};
-                    window.SCENE_NAMES = Object.keys(window.PROJECT_DATA.hotspots);
+                    
+                    // 防呆：確保場景清單絕對不會為空
+                    window.SCENE_NAMES = (window.PROJECT_DATA.scenes && window.PROJECT_DATA.scenes.length > 0) ? window.PROJECT_DATA.scenes : Object.keys(window.PROJECT_DATA.hotspots);
+                    
                     window.SCENE_NAMES.forEach(n => window.IMAGE_ASSETS[n] = './images/' + n);
                     Object.keys(window.PROJECT_DATA.settings).forEach(k => {
                         if (k !== '__GLOBAL__' && window.PROJECT_DATA.settings[k].mapName) {
@@ -247,11 +246,18 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                     initTour();
                 })
                 .catch(e => {
-                    document.getElementById('loading-text').innerHTML = "❌ 讀取設定檔失敗<br><br><span style='color:#ff5555;'>錯誤原因：" + e.message + "</span><br><br>💡 請按下鍵盤 <b>Ctrl + F5</b> 強制重整網頁試試看！";
+                    document.getElementById('loading-text').innerHTML = "❌ 讀取設定檔失敗<br><br><span style='color:#ff5555;font-size:14px;'>錯誤原因：" + e.message + "</span><br><br><span style='font-size:15px;'>💡 請確保上傳至 GitHub 的檔案有 <b>tour.json</b>，且大小寫完全一致。<br>如果剛上傳，請按 <b>Ctrl + F5</b> 強制重新整理。</span>";
                     document.querySelector('.spinner').style.display = 'none';
                 });
             }
-        });
+        }
+        
+        // 保證 100% 執行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startVirtualTourApp);
+        } else {
+            startVirtualTourApp();
+        }
     
 </script>
         <!DOCTYPE html>
@@ -270,7 +276,8 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
                 #ui-panel:hover, #left-hover-zone:hover + #ui-panel { transform: translateX(0); }
                 #file-list { max-height: 60vh; overflow-y: auto; border-top: 1px solid #555; margin-top: 10px; padding-top: 5px; }
                 .file-item { padding: 10px 8px; cursor: pointer; border-bottom: 1px solid #444; font-size: 14px; color: #ddd; transition: 0.2s;}
-                .file-item:hover { background: #333; color: white; } .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
+                .file-item:hover { background: #333; color: white; } 
+                .file-item.active { background: #0088ff; color: white; font-weight: bold; border-left: 4px solid white;}
                 #tooltip { position: absolute; display: none; pointer-events: none; background: rgba(0, 0, 0, 0.8); color: #fff; padding: 8px 12px; border-radius: 4px; font-size: 14px; border: 1px solid rgba(255, 255, 255, 0.3); white-space: nowrap; z-index: 100; }
                 #jump-menu { position: absolute; display: none; z-index: 30; background: rgba(0, 0, 0, 0.9); padding: 12px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); border: 1px solid #555; min-width: 150px; }
                 #jump-menu button { background: #333; color: white; text-align: left; padding: 10px; margin-bottom: 5px; font-size: 15px; border-radius: 4px; border: 1px solid #444; width: 100%; cursor: pointer; transition: 0.2s; border:none; }
@@ -290,7 +297,10 @@ window.PROJECT_MODE = 'ZIP_FOLDER';
             </style>
         </head>
         <body>
-            <div id="loading-screen"><div class="spinner"></div><div id="loading-text" style="text-align:center; line-height: 1.6;">建構空間環境中...</div></div>
+            <div id="loading-screen">
+                <div class="spinner"></div>
+                <div id="loading-text" style="text-align:center; line-height: 1.6; font-size: 18px;">正在載入空間資料...</div>
+            </div>
             <div id="left-hover-zone"></div><div id="transition-overlay"></div><div id="tooltip"></div><div id="jump-menu"></div>
             
             <div id="ui-panel">
